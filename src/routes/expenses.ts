@@ -11,7 +11,7 @@ expensesRouter.get("/", async (req, res) => {
   const { limit, skip, search, from, to } = listQuery(req);
   const filter = { ...dateFilter("expenseDate", from, to), ...(search ? { $or: [{ driverName: new RegExp(search, "i") }, { employeeName: new RegExp(search, "i") }, { vehicleNumber: new RegExp(search, "i") }, { title: new RegExp(search, "i") }] } : {}) };
   const [data, total] = await Promise.all([Expense.find(filter).sort({ expenseDate: -1 }).skip(skip).limit(limit).lean({ virtuals: true }), Expense.countDocuments(filter)]);
-  const cards = data.reduce((acc, row) => {
+  const cards = data.reduce<Record<string, { total: number }>>((acc, row) => {
     if (row.type === "salary") {
       acc["Salary"] = { total: (acc["Salary"]?.total || 0) + row.salaryAmount };
       acc["Bonus"] = { total: (acc["Bonus"]?.total || 0) + row.bonusAmount };
