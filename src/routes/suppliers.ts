@@ -11,7 +11,7 @@ suppliersRouter.use(auth);
 suppliersRouter.get("/", async (req, res) => {
   const { limit, skip, search, from, to } = listQuery(req);
   const filter = { ...dateFilter("supplyDate", from, to), ...(search ? { supplierName: new RegExp(search, "i") } : {}) };
-  const [rows, total] = await Promise.all([SupplierEntry.find(filter).sort({ supplyDate: -1 }).skip(skip).limit(limit).lean(), SupplierEntry.countDocuments(filter)]);
+  const [rows, total] = await Promise.all([SupplierEntry.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(), SupplierEntry.countDocuments(filter)]);
   const out = await SaleEntry.aggregate([{ $match: { supplierId: { $in: rows.map((r) => r._id) } } }, { $group: { _id: "$supplierId", totalOut: { $sum: "$totalKg" } } }]);
   const outMap = new Map(out.map((x) => [String(x._id), x.totalOut]));
   const data = rows.map((row) => ({ ...row, totalAmount: row.kgWeight * row.ratePerKg, totalIn: row.kgWeight, totalOut: outMap.get(String(row._id)) || 0, stockBalance: row.kgWeight - (outMap.get(String(row._id)) || 0) }));

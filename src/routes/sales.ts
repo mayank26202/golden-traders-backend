@@ -15,7 +15,7 @@ salesRouter.use(auth);
 salesRouter.get("/", async (req, res) => {
   const { limit, skip, search, from, to } = listQuery(req);
   const filter = { ...dateFilter("saleDate", from, to), ...(search ? { customerName: new RegExp(search, "i") } : {}) };
-  const [rows, total] = await Promise.all([SaleEntry.find(filter).sort({ saleDate: -1 }).skip(skip).limit(limit).lean(), SaleEntry.countDocuments(filter)]);
+  const [rows, total] = await Promise.all([SaleEntry.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(), SaleEntry.countDocuments(filter)]);
   const data = rows.map((row) => ({ ...row, totalAmount: row.totalKg * row.rateOfSale }));
   res.json({ data, total });
 });

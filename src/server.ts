@@ -60,12 +60,12 @@ async function seedPartyNames() {
 }
 
 function startKeepAlive() {
-  if (!config.keepAliveUrl) return;
+  const url = config.keepAliveUrl || `http://localhost:${config.port}/health`;
   const interval = Math.max(config.keepAliveMinutes, 5) * 60 * 1000;
   setInterval(async () => {
     try {
-      await fetch(config.keepAliveUrl);
-      console.log(`Keep-alive ping sent to ${config.keepAliveUrl}`);
+      await fetch(url);
+      console.log(`Keep-alive ping sent to ${url}`);
     } catch (error) {
       console.warn("Keep-alive ping failed", error);
     }
