@@ -25,6 +25,26 @@ paymentsRouter.get("/", async (req, res) => {
   res.json({ data, cards });
 });
 
+
+paymentsRouter.post("/bulk", permit("sales:create"), async (req, res) => {
+  const entries = req.body.entries;
+  if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ message: "No entries provided" });
+  
+  const createdBy = req.user!.id;
+  const docs = entries.map(body => ({
+    customerName: body.customerName,
+    amount: body.amount,
+    method: body.method || "cash",
+    paymentDate: new Date(body.paymentDate || new Date()),
+    paymentTime: body.paymentTime,
+    note: body.note,
+    createdBy
+  }));
+  
+  const data = await CustomerPayment.insertMany(docs);
+  res.status(201).json({ data });
+});
+
 paymentsRouter.post("/", permit("sales:create"), async (req, res) => {
   const body = z.object({
     customerName: z.string().min(1),

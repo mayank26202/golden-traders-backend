@@ -28,6 +28,24 @@ suppliersRouter.get("/history", async (_req, res) => {
   res.json({ data });
 });
 
+
+suppliersRouter.post("/bulk", permit("suppliers:create"), async (req, res) => {
+  const entries = req.body.entries;
+  if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ message: "No entries provided" });
+  
+  const createdBy = req.user!.id;
+  const docs = entries.map(body => ({
+    supplierName: body.supplierName,
+    kgWeight: body.kgWeight,
+    ratePerKg: body.ratePerKg || 0,
+    supplyDate: new Date(body.supplyDate || new Date()),
+    createdBy
+  }));
+  
+  const data = await SupplierEntry.insertMany(docs);
+  res.status(201).json({ data });
+});
+
 suppliersRouter.post("/", permit("suppliers:create"), async (req, res) => {
   const body = z.object({ supplierName: z.string().min(1), kgWeight: z.number(), ratePerKg: z.number().default(0), supplyDate: z.coerce.date().default(new Date()) }).parse(req.body);
   const data = await SupplierEntry.create({ ...body, createdBy: req.user!.id });

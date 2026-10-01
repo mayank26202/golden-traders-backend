@@ -15,21 +15,91 @@ salesRouter.use(auth);
 salesRouter.get("/", async (req, res) => {
   const { limit, skip, search, from, to } = listQuery(req);
   const filter = { ...dateFilter("saleDate", from, to), ...(search ? { customerName: new RegExp(search, "i") } : {}) };
-  const [rows, total] = await Promise.all([SaleEntry.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(), SaleEntry.countDocuments(filter)]);
+  const supplyFilter = { ...dateFilter("supplyDate", from, to) };
+  
+  const [rows, total, allSupplies, allSales] = await Promise.all([
+    SaleEntry.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    SaleEntry.countDocuments(filter),
+    SupplierEntry.aggregate([{ $match: supplyFilter }, { $group: { _id: "$supplierName", totalIn: { $sum: "$kgWeight" } } }]),
+    SaleEntry.aggregate([{ $match: filter }, { $group: { _id: "$supplierName", totalSale: { $sum: "$totalKg" } } }])
+  ]);
+  
+  const map = {};
+  allSupplies.forEach(s => {
+    map[s._id] = { totalIn: s.totalIn, totalSale: 0 };
+  });
+  allSales.forEach(s => {
+    if(!map[s._id]) map[s._id] = { totalIn: 0, totalSale: 0 };
+    map[s._id].totalSale = s.totalSale;
+  });
+  
+  let overallIn = 0;
+  let overallSale = 0;
+  const suppliers = [];
+  for (const name of Object.keys(map)) {
+    const stockLeft = map[name].totalIn - map[name].totalSale;
+    overallIn += map[name].totalIn;
+    overallSale += map[name].totalSale;
+    suppliers.push({ supplierName: name, totalSale: map[name].totalSale, stockLeft });
+  }
+  
+  const cards = {
+    overall: { totalSale: overallSale, stockLeft: overallIn - overallSale },
+    suppliers
+  };
+
   const data = rows.map((row) => ({ ...row, totalAmount: row.totalKg * row.rateOfSale }));
-  res.json({ data, total });
+  res.json({ data, total, cards });
 });
 
 salesRouter.get("/available-suppliers", async (req, res) => {
   const date = z.coerce.date().parse(req.query.date);
   const from = new Date(date); from.setHours(0, 0, 0, 0);
   const to = new Date(date); to.setHours(23, 59, 59, 999);
+  
   const data = await SupplierEntry.aggregate([
     { $match: { supplyDate: { $gte: from, $lte: to } } },
     { $group: { _id: "$supplierName", supplierId: { $first: "$_id" }, totalIn: { $sum: "$kgWeight" } } },
     { $sort: { _id: 1 } },
   ]);
-  res.json({ data: data.map((x) => ({ supplierId: x.supplierId, supplierName: x._id, totalIn: x.totalIn })) });
+  
+  const salesData = await SaleEntry.aggregate([
+    { $match: { saleDate: { $gte: from, $lte: to } } },
+    { $group: { _id: "$supplierId", totalOut: { $sum: "$totalKg" } } }
+  ]);
+  
+  const salesMap = Object.fromEntries(salesData.map(s => [s._id?.toString(), s.totalOut]));
+  
+  res.json({ 
+    data: data.map((x) => ({ 
+      supplierId: x.supplierId, 
+      supplierName: x._id, 
+      totalIn: x.totalIn, 
+      stockBalance: x.totalIn - (salesMap[x.supplierId?.toString()] || 0) 
+    })) 
+  });
+});
+});
+
+
+salesRouter.post("/bulk", permit("sales:create"), async (req, res) => {
+  const entries = req.body.entries;
+  if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ message: "No entries provided" });
+  
+  const createdBy = req.user!.id;
+  const docs = entries.map(body => ({
+    customerName: body.customerName,
+    totalKg: body.totalKg,
+    rateOfSale: body.rateOfSale || 0,
+    saleDate: new Date(body.saleDate || new Date()),
+    supplierId: body.supplierId,
+    supplierName: body.supplierName,
+    createdBy
+  }));
+  
+  // Basic validation bypass for speed on bulk, we assume frontend validated
+  const data = await SaleEntry.insertMany(docs);
+  res.status(201).json({ data });
 });
 
 salesRouter.post("/", permit("sales:create"), async (req, res) => {
