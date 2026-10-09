@@ -24,7 +24,7 @@ salesRouter.get("/", async (req, res) => {
     SaleEntry.aggregate([{ $match: filter }, { $group: { _id: "$supplierName", totalSale: { $sum: "$totalKg" } } }])
   ]);
   
-  const map = {};
+  const map: Record<string, { totalIn: number; totalSale: number }> = {};
   allSupplies.forEach(s => {
     map[s._id] = { totalIn: s.totalIn, totalSale: 0 };
   });
@@ -79,8 +79,6 @@ salesRouter.get("/available-suppliers", async (req, res) => {
     })) 
   });
 });
-});
-
 
 salesRouter.post("/bulk", permit("sales:create"), async (req, res) => {
   const entries = req.body.entries;
