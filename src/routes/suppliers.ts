@@ -30,6 +30,7 @@ suppliersRouter.get("/history", async (_req, res) => {
 
 
 suppliersRouter.post("/bulk", permit("suppliers:create"), async (req, res) => {
+  //bulk supply
   const entries = req.body.entries;
   if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ message: "No entries provided" });
   
