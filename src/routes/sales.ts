@@ -18,7 +18,7 @@ salesRouter.get("/", async (req, res) => {
   const supplyFilter = { ...dateFilter("supplyDate", from, to) };
   
   const [rows, total, allSupplies, allSales] = await Promise.all([
-    SaleEntry.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    SaleEntry.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit).lean(),
     SaleEntry.countDocuments(filter),
     SupplierEntry.aggregate([{ $match: supplyFilter }, { $group: { _id: "$supplierName", totalIn: { $sum: "$kgWeight" } } }]),
     SaleEntry.aggregate([{ $match: filter }, { $group: { _id: "$supplierName", totalSale: { $sum: "$totalKg" } } }])
@@ -59,13 +59,14 @@ salesRouter.get("/available-suppliers", async (req, res) => {
   
   const data = await SupplierEntry.aggregate([
     { $match: { supplyDate: { $gte: from, $lte: to } } },
+    { $sort: { createdAt: 1, _id: 1 } },
     { $group: { _id: "$supplierName", supplierId: { $first: "$_id" }, totalIn: { $sum: "$kgWeight" } } },
     { $sort: { _id: 1 } },
   ]);
   
   const salesData = await SaleEntry.aggregate([
     { $match: { saleDate: { $gte: from, $lte: to } } },
-    { $group: { _id: "$supplierId", totalOut: { $sum: "$totalKg" } } }
+    { $group: { _id: "$supplierName", totalOut: { $sum: "$totalKg" } } }
   ]);
   
   const salesMap = Object.fromEntries(salesData.map(s => [s._id?.toString(), s.totalOut]));
@@ -75,7 +76,7 @@ salesRouter.get("/available-suppliers", async (req, res) => {
       supplierId: x.supplierId, 
       supplierName: x._id, 
       totalIn: x.totalIn, 
-      stockBalance: x.totalIn - (salesMap[x.supplierId?.toString()] || 0) 
+      stockBalance: x.totalIn - (salesMap[x._id] || 0) 
     })) 
   });
 });
@@ -105,8 +106,6 @@ salesRouter.post("/", permit("sales:create"), async (req, res) => {
   const dayStart = new Date(body.saleDate); dayStart.setHours(0, 0, 0, 0); const dayEnd = new Date(body.saleDate); dayEnd.setHours(23, 59, 59, 999);
   const supply = await SupplierEntry.findOne({ _id: body.supplierId, supplierName: body.supplierName, supplyDate: { $gte: dayStart, $lte: dayEnd } }).lean();
   if (!supply) return res.status(400).json({ message: "Is date ke liye selected supplier ki supply nahi mili" });
-  const used = await SaleEntry.aggregate([{ $match: { supplierId: supply._id, saleDate: { $gte: dayStart, $lte: dayEnd } } }, { $group: { _id: null, kg: { $sum: "$totalKg" } } }]);
-  if ((used[0]?.kg || 0) + body.totalKg > supply.kgWeight) return res.status(400).json({ message: `Available stock sirf ${Math.max(0, supply.kgWeight - (used[0]?.kg || 0))} kg hai` });
   const data = await SaleEntry.create({ ...body, createdBy: req.user!.id });
   res.status(201).json({ data });
 });

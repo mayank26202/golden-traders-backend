@@ -17,7 +17,7 @@ const bankAccounts = ["SK", "golden_traders_bank"] as const;
 paymentsRouter.get("/", async (req, res) => {
   const { from, to, search } = listQuery(req);
   const filter = { ...dateFilter("paymentDate", from, to), ...(search ? { customerName: new RegExp(search, "i") } : {}) };
-  const data = await CustomerPayment.find(filter).sort({ createdAt: -1 }).lean();
+  const data = await CustomerPayment.find(filter).sort({ createdAt: -1, _id: -1 }).lean();
   const cards = data.reduce<Record<string, { count: number; total: number }>>((acc, row) => {
     acc[row.method] = { count: (acc[row.method]?.count || 0) + 1, total: (acc[row.method]?.total || 0) + row.amount };
     return acc;
@@ -100,7 +100,7 @@ paymentsRouter.get("/outstanding", async (req, res) => {
 
 paymentsRouter.get("/cash-deposits", async (req, res) => {
   const { from, to } = listQuery(req);
-  const data = await CashDeposit.find(dateFilter("depositDate", from, to)).sort({ createdAt: -1 }).lean();
+  const data = await CashDeposit.find(dateFilter("depositDate", from, to)).sort({ createdAt: -1, _id: -1 }).lean();
   const cards = data.reduce<Record<string, { count: number; total: number }>>((acc, row) => {
     acc[row.bankAccount] = { count: (acc[row.bankAccount]?.count || 0) + 1, total: (acc[row.bankAccount]?.total || 0) + row.amount };
     return acc;
@@ -111,7 +111,7 @@ paymentsRouter.get("/cash-deposits", async (req, res) => {
 paymentsRouter.get("/suppliers", async (req, res) => {
   const { from, to, search } = listQuery(req);
   const filter = { ...dateFilter("paymentDate", from, to), ...(search ? { supplierName: new RegExp(search, "i") } : {}) };
-  const data = await SupplierPayment.find(filter).sort({ createdAt: -1 }).lean();
+  const data = await SupplierPayment.find(filter).sort({ createdAt: -1, _id: -1 }).lean();
   const cards = data.reduce<Record<string, { count: number; total: number }>>((acc, row) => {
     acc[row.method] = { count: (acc[row.method]?.count || 0) + 1, total: (acc[row.method]?.total || 0) + row.amount };
     return acc;
