@@ -125,6 +125,16 @@ paymentsRouter.post("/suppliers", permit("suppliers:create"), async (req, res) =
   res.status(201).json({ data });
 });
 
+paymentsRouter.post("/suppliers/bulk", permit("suppliers:create"), async (req, res) => {
+  const { entries } = z.object({ entries: z.array(z.object({
+    supplierName: z.string().trim().min(1), amount: z.number().positive(),
+    method: z.enum(paymentMethods), paymentDate: z.coerce.date(),
+    paymentTime: z.string().min(1), note: z.string().optional(),
+  })).min(1) }).parse(req.body);
+  const data = await SupplierPayment.insertMany(entries.map(entry => ({ ...entry, createdBy: req.user!.id })));
+  res.status(201).json({ data });
+});
+
 paymentsRouter.patch("/suppliers/:id", permit("suppliers:edit"), async (req, res) => {
   const body = z.object({ supplierName: z.string().min(1).optional(), amount: z.number().positive().optional(), method: z.enum(paymentMethods).optional(), paymentDate: z.coerce.date().optional(), paymentTime: z.string().min(1).optional(), note: z.string().optional() }).parse(req.body);
   const data = await SupplierPayment.findByIdAndUpdate(req.params.id, body, { new: true });

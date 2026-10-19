@@ -3,6 +3,16 @@ import { z } from "zod";
 import { auth, permit } from "../middleware/auth.js";
 import { Expense } from "../models/Expense.js";
 import { dateFilter, listQuery } from "../utils/query.js";
+import { Vehicle } from "../models/Vehicle.js";
+
+async function recordEnteredVehicle(expense: { type: string; vehicleNumber?: string | null; driverName?: string | null }, createdBy: string) {
+  if (expense.type !== "vehicle" || !expense.vehicleNumber?.trim()) return;
+  const vehicleNumber = expense.vehicleNumber.trim().toUpperCase();
+  await Vehicle.updateOne({ vehicleNumber }, {
+    $setOnInsert: { vehicleNumber, createdBy },
+    ...(expense.driverName?.trim() ? { $set: { driverName: expense.driverName.trim() } } : {}),
+  }, { upsert: true });
+}
 
 export const expensesRouter = Router();
 expensesRouter.use(auth);
@@ -30,7 +40,7 @@ expensesRouter.post("/", permit("expenses:create"), async (req, res) => {
   const body = z.object({
     type: z.enum(["vehicle", "emi", "salary"]),
     driverName: z.string().optional(),
-    vehicleNumber: z.string().optional(),
+    vehicleNumber: z.string().trim().toUpperCase().optional(),
     employeeName: z.string().optional(),
     fuelType: z.enum(["diesel", "petrol", "cng"]).optional(),
     foodCost: z.number().default(0),
@@ -44,6 +54,7 @@ expensesRouter.post("/", permit("expenses:create"), async (req, res) => {
     expenseDate: z.coerce.date().default(new Date()),
   }).parse(req.body);
   const data = await Expense.create({ ...body, createdBy: req.user!.id });
+  await recordEnteredVehicle(data, req.user!.id);
   res.status(201).json({ data });
 });
 
@@ -63,7 +74,7 @@ expensesRouter.patch("/:id", permit("expenses:edit"), async (req, res) => {
   const body = z.object({
     type: z.enum(["vehicle", "emi", "salary"]).optional(),
     driverName: z.string().optional(),
-    vehicleNumber: z.string().optional(),
+    vehicleNumber: z.string().trim().toUpperCase().optional(),
     employeeName: z.string().optional(),
     fuelType: z.enum(["diesel", "petrol", "cng"]).optional(),
     foodCost: z.number().optional(),
@@ -77,6 +88,7 @@ expensesRouter.patch("/:id", permit("expenses:edit"), async (req, res) => {
     expenseDate: z.coerce.date().optional(),
   }).parse(req.body);
   const data = await Expense.findByIdAndUpdate(req.params.id, body, { new: true });
+  if (data) await recordEnteredVehicle(data, req.user!.id);
   res.json({ data });
 });
 

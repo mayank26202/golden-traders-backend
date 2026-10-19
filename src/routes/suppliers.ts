@@ -4,6 +4,8 @@ import { auth, permit } from "../middleware/auth.js";
 import { SupplierEntry } from "../models/SupplierEntry.js";
 import { dateFilter, listQuery } from "../utils/query.js";
 import { SaleEntry } from "../models/SaleEntry.js";
+import { SupplierPayment } from "../models/SupplierPayment.js";
+import { allocateSupplierPaid } from "../utils/supplierPaid.js";
 
 export const suppliersRouter = Router();
 suppliersRouter.use(auth);
@@ -14,18 +16,28 @@ suppliersRouter.get("/", async (req, res) => {
   const [rows, total] = await Promise.all([SupplierEntry.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit).lean(), SupplierEntry.countDocuments(filter)]);
   const out = await SaleEntry.aggregate([{ $match: { supplierId: { $in: rows.map((r) => r._id) } } }, { $group: { _id: "$supplierId", totalOut: { $sum: "$totalKg" } } }]);
   const outMap = new Map(out.map((x) => [String(x._id), x.totalOut]));
-  const data = rows.map((row) => ({ ...row, totalAmount: row.kgWeight * row.ratePerKg, totalIn: row.kgWeight, totalOut: outMap.get(String(row._id)) || 0, stockBalance: row.kgWeight - (outMap.get(String(row._id)) || 0) }));
+  const supplierNames = [...new Set(rows.map(row => row.supplierName))];
+  const [supplies, payments] = await Promise.all([
+    SupplierEntry.find({ supplierName: { $in: supplierNames } }).sort({ supplyDate: 1, createdAt: 1, _id: 1 }).lean(),
+    SupplierPayment.aggregate([{ $match: { supplierName: { $in: supplierNames } } }, { $group: { _id: "$supplierName", paidAmount: { $sum: "$amount" } } }]),
+  ]);
+  const paid = allocateSupplierPaid(supplies, payments);
+  const data = rows.map((row) => ({ ...row, ...paid.get(String(row._id)), totalAmount: row.kgWeight * row.ratePerKg, totalIn: row.kgWeight, totalOut: outMap.get(String(row._id)) || 0, stockBalance: row.kgWeight - (outMap.get(String(row._id)) || 0) }));
   res.json({ data, total });
 });
 
 suppliersRouter.get("/history", async (_req, res) => {
-  const data = await SupplierEntry.aggregate([
+  const [data, payments] = await Promise.all([SupplierEntry.aggregate([
     { $addFields: { totalAmount: { $multiply: ["$kgWeight", "$ratePerKg"] }, paidAmount: { $cond: [{ $eq: ["$payment.status", "done"] }, { $multiply: ["$kgWeight", "$ratePerKg"] }, 0] } } },
     { $group: { _id: "$supplierName", totalKg: { $sum: "$kgWeight" }, totalAmount: { $sum: "$totalAmount" }, paidAmount: { $sum: "$paidAmount" }, entryCount: { $sum: 1 } } },
     { $addFields: { pendingAmount: { $subtract: ["$totalAmount", "$paidAmount"] } } },
     { $sort: { totalAmount: -1 } },
-  ]);
-  res.json({ data });
+  ]), SupplierPayment.aggregate([{ $group: { _id: "$supplierName", paidAmount: { $sum: "$amount" } } }])]);
+  const paidMap = new Map(payments.map(payment => [payment._id, payment.paidAmount]));
+  res.json({ data: data.map(supplier => {
+    const paidAmount = supplier.paidAmount + (paidMap.get(supplier._id) || 0);
+    return { ...supplier, paidAmount, pendingAmount: supplier.totalAmount - paidAmount };
+  }) });
 });
 
 
